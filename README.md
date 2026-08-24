@@ -3,6 +3,10 @@
 A terminal workspace for macOS: a file browser you can click, a shell that survives closing the
 window, working clipboard images, and a pinned header — set up by one command.
 
+![Overview](docs/overview.png)
+
+---
+
 ![The workspace](docs/workspace.png)
 
 *Left: yazi, two columns. Right: a plain shell with Claude Code running in it — nothing here starts
