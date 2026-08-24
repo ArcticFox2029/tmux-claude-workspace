@@ -370,9 +370,41 @@ window before deciding a colour fix failed.
 
 **Terminal greys can be invisible without looking broken.** ANSI colour 8 — what programs use for
 secondary text like "Running 2 shell commands" or a timer — started at contrast 2.48 against the
-background, which reads as the program printing nothing rather than as a colour problem. It is
-5.81 now. ANSI 0 is deliberately left dark: it is barely used as text and it is load-bearing as a
-*background*, since the banner paints the logo's eyes by switching to it. Raise 8, never 0.
+background, which reads as the program printing nothing rather than as a colour problem. ANSI 0 is
+deliberately left dark: it is barely used as text and it is load-bearing as a *background*, since
+the banner paints the logo's eyes by switching to it. Raise 8, never 0.
+
+**But raising ANSI 8 far enough to read breaks Claude Code's own dark theme.** That theme is
+`dark-ansi`, which means it holds no colours of its own and takes everything from this palette — and
+the band it paints behind *your* messages is ANSI 8. So the same value is doing two jobs that want
+opposite things: as text it wants to be light, as a background it wants to be dark. Raised to 5.81
+for the text, the band fell to 1.93 against the white text drawn on it, which is white-on-white and
+unreadable.
+
+ANSI 8 is `#363650` here, which reads the band at 7.99 and lets it blend into the page. Secondary
+text drops to 1.42 and is close to invisible; that is a deliberate choice, because the message you
+just typed is worth more than a timer. **If you want the faded text back instead, `#6B7192` is the
+only value that clears 3.0 in both roles** — 3.47 as text, 3.27 as a band.
+
+**These numbers are tuned for one specific setup, and yours may not be it.** Every ratio above is
+measured against this palette, this background, and Claude Code on `dark-ansi`. Change any of the
+three and the arithmetic changes with it:
+
+| If you… | What happens |
+|---|---|
+| Use Claude Code's **light** theme | The band comes from a light-palette entry instead. A dark ANSI 8 is then the wrong end entirely. |
+| Use `dark` / `light` rather than `dark-ansi` | Claude Code stops reading this palette at all and paints its own colours. Nothing here applies; use `/theme` → `Ctrl+E` instead. |
+| Change the terminal background | Both ratios move, because contrast is a relationship, not a property of a colour. |
+| Use a different terminal | Its ANSI 8 is a different colour and the band moves with it. |
+
+So treat `#363650` as *a worked example of the method*, not a value to copy. The method is: find
+which palette entry the band actually uses by sampling the pixels, then pick a value with the
+contrast arithmetic rather than by eye. That transfers; the hex does not.
+
+Two things worth stealing from how this was found. The colour was identified by sampling the actual
+pixels of a screenshot, after six attempts spent editing Claude Code theme tokens that could never
+have worked — under `dark-ansi` there is no colour in the theme to edit. And every value above is a
+measured contrast ratio, not a judgement: eyes disagree about greys, the arithmetic does not.
 
 **`keymap.toml` in yazi replaces the entire default table.** A file listing one binding leaves you
 with a file manager that has one key. `prepend_keymap` is what you want.

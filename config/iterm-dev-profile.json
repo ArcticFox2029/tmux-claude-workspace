@@ -105,9 +105,9 @@
         "Color Space": "sRGB"
       },
       "Ansi 8 Color": {
-        "Red Component": 0.5764705882352941,
-        "Green Component": 0.6,
-        "Blue Component": 0.6980392156862745,
+        "Red Component": 0.21176470588235294,
+        "Green Component": 0.21176470588235294,
+        "Blue Component": 0.3137254901960784,
         "Color Space": "sRGB"
       },
       "Ansi 9 Color": {
