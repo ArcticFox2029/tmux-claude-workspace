@@ -1,0 +1,17 @@
+#!/bin/bash
+# Runs INSIDE the temporary edit window. Everything arrives through the environment so no quoting
+# has to survive being embedded in a tmux command string.
+set -u
+
+# ^S is flow-control on a terminal by default, which would freeze the screen instead of saving.
+stty -ixon 2>/dev/null
+
+case "${YZE_BIN}" in
+  *vim) [ -r "${YZE_RC:-}" ] && "${YZE_BIN}" -u "${YZE_RC}" "${YZE_FILE}" || "${YZE_BIN}" "${YZE_FILE}" ;;
+  *)    "${YZE_BIN}" "${YZE_FILE}" ;;
+esac
+
+# Hand focus back to the pane that had it. Without this, closing this window can leave focus on a
+# pane with input disabled, and the workspace looks frozen — see the note in yazi-edit.
+[ -n "${YZE_BACK:-}" ] && tmux select-pane -t "${YZE_BACK}" 2>/dev/null
+exit 0

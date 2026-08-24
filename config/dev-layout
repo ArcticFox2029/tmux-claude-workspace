@@ -1,0 +1,75 @@
+#!/bin/bash
+# Open the workspace: a file browser on the left, a shell on the right, and a pinned banner above
+# the shell. Launched by the iTerm2 profile, so a new window comes up ready rather than empty.
+#
+# The session survives the window. Close iTerm2, let the Mac sleep, come back — tmux still has it,
+# which is the one property this whole setup exists for.
+set -u
+
+TMUX_BIN="$(command -v tmux || echo /opt/homebrew/bin/tmux)"
+[ -x "$TMUX_BIN" ] || { echo "tmux not found. brew install tmux"; exec "$SHELL" -l; }
+
+# Homebrew is not on PATH yet when iTerm2 runs a profile command: it does not start a login shell,
+# so nothing has sourced the profile. Every tool below is called through a resolved path or after
+# this line, because "command not found" here closes the window before anyone can read it.
+[ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# Thai (and every other non-ASCII) text needs a UTF-8 locale. macOS supplies C.UTF-8 by default,
+# which miscounts combining characters and makes the cursor land in the wrong column.
+export LANG="${LANG_OVERRIDE:-en_US.UTF-8}"
+export LC_CTYPE="$LANG"
+
+# Which folder to open in. Override by writing a path into the config file, one line.
+CFG="$HOME/.config/dev-layout/folder"
+DIR="$HOME"
+[ -f "$CFG" ] && DIR=$(grep -v '^[[:space:]]*#' "$CFG" | grep -v '^[[:space:]]*$' | head -1)
+DIR="${DIR/#\~/$HOME}"
+[ -d "$DIR" ] || DIR="$HOME"
+
+# One session per window. Sweeping abandoned sessions has a deliberate age guard: without it,
+# opening a second window kills the first window's session while its shell is still starting.
+PREFIX="${DEV_SESSION_PREFIX:-dev}"
+now=$(date +%s)
+"$TMUX_BIN" list-sessions -F '#{session_name} #{session_attached} #{session_created}' 2>/dev/null \
+| while read -r name attached created; do
+    case "$name" in "$PREFIX"*) ;; *) continue ;; esac
+    [ "$attached" = "0" ] && [ $(( now - created )) -gt 60 ] && "$TMUX_BIN" kill-session -t "$name"
+  done
+
+SESSION="$PREFIX"
+n=2
+while "$TMUX_BIN" has-session -t "$SESSION" 2>/dev/null; do SESSION="$PREFIX$n"; n=$((n+1)); done
+
+# Panes are addressed by ID (%0, %1), never by index. pane-base-index is 1 in tmux.conf, and
+# addressing panes as .0/.1 sends commands to a pane that does not exist — silently.
+LEFT=$("$TMUX_BIN" new-session -d -P -F '#{pane_id}' -s "$SESSION" -c "$DIR" -n main)
+command -v yazi >/dev/null 2>&1 && "$TMUX_BIN" send-keys -t "$LEFT" 'yazi' C-m
+
+# Right pane: an ordinary shell. Type `claude`, or anything else, or nothing.
+RIGHT=$("$TMUX_BIN" split-window -h -l 60% -P -F '#{pane_id}' -t "$LEFT" -c "$DIR")
+
+# The banner: three rows above the right pane, holding a logo and a line of text.
+#
+# ⚠️ Two guards, and both are required. A pane can take focus, and a pane that holds a `read`
+# swallows every keystroke without saying so — which reads as "the terminal froze". This exact
+# thing broke the workspace once before the guards were added:
+#
+#   select-pane -d      input to the pane is off, so nothing can be typed into it
+#   after-select-pane   focus that lands there is bounced straight back to the shell
+#
+# Remove the banner rather than either guard.
+if [ -x "$HOME/.local/bin/claude-banner" ]; then
+  BANNER=$("$TMUX_BIN" split-window -v -b -l 3 -t "$RIGHT" -c "$DIR" -P -F '#{pane_id}' \
+           "$HOME/.local/bin/claude-banner" 2>/dev/null)
+  if [ -n "${BANNER:-}" ]; then
+    "$TMUX_BIN" select-pane -d -t "$BANNER" 2>/dev/null
+    "$TMUX_BIN" set-hook -t "$SESSION" after-select-pane \
+        "if -F '#{==:#{pane_id},$BANNER}' 'select-pane -t $RIGHT'" 2>/dev/null
+    # A window resize redistributes rows proportionally, and a 3-row pane rounds down to 2 — which
+    # scrolls the top line of the banner away. The hook puts the height back.
+    "$TMUX_BIN" set-hook -t "$SESSION" client-resized "resize-pane -t $BANNER -y 3" 2>/dev/null
+  fi
+fi
+
+"$TMUX_BIN" select-pane -t "$RIGHT" 2>/dev/null
+exec "$TMUX_BIN" attach -t "$SESSION"

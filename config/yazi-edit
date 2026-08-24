@@ -1,0 +1,43 @@
+#!/bin/bash
+# Open a file in an editor, in its own tmux WINDOW. Called from yazi's `e` binding.
+#
+# and it is. Two earlier versions tried to make room in the CURRENT window and both went wrong:
+#
+#   - display-popup floats above the window and receives no mouse events, so nano could not be
+#     clicked in, which was the whole point of enabling its mouse support.
+#   - splitting a pane worked, but closing that pane does not restore the window. tmux hands the
+#     freed columns to whichever pane it prefers, and here that left the file browser two
+#     characters wide. Capturing and replaying window_layout fixed it and added a second thing
+#     that has to be right.
+#
+# A window needs neither. It gets mouse events like any pane, the original window is not touched at
+# all, and when the editor exits the window closes and tmux goes back on its own. Nothing to
+# restore because nothing was disturbed.
+set -u
+p="${1:-}"
+[ -n "$p" ] && [ -f "$p" ] || exit 0
+command -v tmux >/dev/null 2>&1 && [ -n "${TMUX:-}" ] || exit 0
+
+# 🎯 [owner 2026-08-24] vim, not nano — and the reason is the mouse. nano's own manual says it
+# cannot drag-select: "Text can still be selected through dragging by holding down the Shift key",
+# which is nano handing the job back to the terminal. vim does it properly, and brings the system
+# clipboard with it.
+#
+# It is launched with `vim -u <our vimrc>`, which keeps a personal ~/.vimrc completely out of it.
+# That config makes vim behave like nano — opens in insert mode, ^S saves, ^X saves and exits, ^Q
+# quits, ^C/^V are the system clipboard — because the modes are the whole reason people bounce off
+# vim, and nothing we wanted from it needs them.
+EDITOR_BIN="${YAZI_EDIT_BIN:-/usr/bin/vim}"
+EDITOR_RC="${YAZI_EDIT_VIMRC:-$HOME/.config/yazi-edit/vimrc}"
+
+# 🐛 Remember which pane had focus. Closing the edit window returns to the previous window but
+# NOT to a usable pane: tmux restores whatever pane was last active there, and if that was the
+# banner — a pane with input disabled — every keystroke lands in a hole and the terminal looks
+# frozen with the old screen still drawn. The after-select-pane hook that normally bounces focus
+# off the banner does not fire on a WINDOW change, so it has to be done here.
+BACK=$(tmux display -p '#{pane_id}')
+
+# The filename travels in the environment rather than inside the command string: a path with a
+# space or a quote in it does not survive being embedded, and every macOS screenshot has spaces.
+tmux new-window -n "edit" -e "YZE_FILE=$p" -e "YZE_BIN=$EDITOR_BIN" -e "YZE_RC=$EDITOR_RC" -e "YZE_BACK=$BACK" \
+  "$HOME/.local/bin/yazi-edit-run"

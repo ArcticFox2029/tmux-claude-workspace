@@ -1,0 +1,75 @@
+" vim, made to behave like nano.
+"
+" what we actually wanted from it (mouse drag-selection, system clipboard) needs them.
+"
+" So: it opens in INSERT mode and stays there. Type immediately, like any other editor. Ctrl keys
+" do what the same Ctrl keys do in nano. The bottom line lists them, because a hint bar is the
+" other thing nano gets right.
+"
+" Loaded with `vim -u`, so it does NOT touch a personal ~/.vimrc. Anyone who already lives in vim
+" keeps their own setup untouched; this file only shapes the editor that yazi's `e` opens.
+
+set nocompatible
+set encoding=utf-8
+scriptencoding utf-8
+
+" ── The mouse, which is why vim is here at all ────────────────────────────────────────────────
+" nano cannot drag-select — its own manual says to hold Shift and let the terminal do it. vim can.
+set mouse=a
+set ttymouse=sgr          " SGR protocol: works past column 223, which the legacy one does not
+set clipboard=unnamed     " yanks and deletes go straight to the macOS clipboard
+
+" ── Looks and safety ──────────────────────────────────────────────────────────────────────────
+syntax on
+set number
+set ruler
+set laststatus=2
+set backspace=indent,eol,start
+set wrap linebreak
+set expandtab tabstop=2 shiftwidth=2
+set autoindent
+set incsearch hlsearch ignorecase smartcase
+set noswapfile nobackup nowritebackup
+set updatetime=300
+set title
+
+" ── nano's keys ───────────────────────────────────────────────────────────────────────────────
+" Each mapping is defined for insert, normal AND visual mode, because the point is that the mode
+" you happen to be in never matters.
+"
+" ^S save · ^X save and exit · ^Q quit without saving · ^Z undo · ^Y redo · ^F find
+" ^C copy · ^V paste · ^A select all
+inoremap <C-s> <C-o>:write<CR>
+nnoremap <C-s> :write<CR>
+vnoremap <C-s> <Esc>:write<CR>
+
+inoremap <C-x> <Esc>:xit<CR>
+nnoremap <C-x> :xit<CR>
+vnoremap <C-x> <Esc>:xit<CR>
+
+inoremap <C-q> <Esc>:quit!<CR>
+nnoremap <C-q> :quit!<CR>
+
+inoremap <C-z> <C-o>u
+nnoremap <C-z> u
+inoremap <C-y> <C-o><C-r>
+nnoremap <C-y> <C-r>
+
+inoremap <C-f> <C-o>/
+nnoremap <C-f> /
+
+" Copy and paste against the SYSTEM clipboard, so it works with everything else on the Mac.
+vnoremap <C-c> "+y
+inoremap <C-v> <C-r>+
+nnoremap <C-v> "+p
+vnoremap <C-v> "+p
+inoremap <C-a> <Esc>ggVG
+nnoremap <C-a> ggVG
+
+" ── The hint bar ──────────────────────────────────────────────────────────────────────────────
+set statusline=%#StatusLine#\ %f\ %m%r%=\ %l:%c\ \|\ %P\ 
+set showtabline=2
+set tabline=%#TabLineFill#\ ^S\ Save\ \ ^X\ Save+Exit\ \ ^Q\ Quit\ \ ^Z\ Undo\ \ ^C\ Copy\ \ ^V\ Paste\ \ ^F\ Find\ \ ^A\ All
+
+" Start typing straight away — this is the line that makes it feel like nano rather than vim.
+autocmd VimEnter * startinsert

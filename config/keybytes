@@ -1,0 +1,34 @@
+#!/bin/bash
+# Show the exact bytes a keypress sends. Run it, press the key, read the answer.
+#
+# Why this exists as a tool rather than a one-off: a key that "does not work" has three completely
+# different causes and they are indistinguishable by looking at the screen — the key sends nothing,
+# the key sends the wrong bytes, or the key sends the right bytes and the program ignores them.
+# Only the first two are fixable in the terminal, and this is what tells them apart.
+#
+# raw mode is the whole point. In the normal cooked mode the tty line discipline eats several
+# control keys before any program sees them — ctrl+v in particular is "literal next" and is
+# swallowed, which looks exactly like a key that sends nothing at all.
+set -u
+
+COUNT="${1:-8}"
+echo "Press the key you want to inspect (reads $COUNT bytes, then exits - ctrl+c to quit)"
+echo
+
+old=$(stty -g)
+trap 'stty "$old" 2>/dev/null' EXIT INT TERM
+stty raw -echo
+bytes=$(head -c "$COUNT" | xxd -p | tr -d '\n')
+stty "$old"
+
+echo
+echo "bytes: $bytes"
+echo
+case "$bytes" in
+  16*)      echo "  16 = ctrl+v. The key reaches the application, so anything still broken is above the terminal." ;;
+  1b0d*)    echo "  1b 0d = ESC + CR. This is the meta-Return that Claude Code reads as a newline." ;;
+  0d*)      echo "  0d = plain Enter. The modifier is not being sent." ;;
+  02*)      echo "  02 = ctrl+b, the tmux prefix." ;;
+  "")       echo "  Nothing arrived. Something ate the key before the terminal: an input source, a terminal key mapping, or a macOS shortcut." ;;
+  *)        echo "  Unexpected. Quote this line when reporting it." ;;
+esac

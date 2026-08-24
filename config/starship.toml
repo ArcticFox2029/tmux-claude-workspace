@@ -1,0 +1,54 @@
+# starship — the prompt. Set up 2026-08-24.
+#
+# Deliberately two lines: the path and git state on top, a bare arrow underneath. On a narrow
+# tmux pane a single-line prompt pushes the cursor halfway across the screen and long commands
+# wrap in the middle of a word — which is exactly where Thai text is hardest to read.
+
+format = """
+$directory$git_branch$git_status$cmd_duration
+$character"""
+
+add_newline = true
+
+[directory]
+style = "bold cyan"
+truncation_length = 3
+truncate_to_repo = true
+read_only = " 󰌾"
+
+[git_branch]
+symbol = " "
+style = "bold purple"
+format = "[$symbol$branch]($style) "
+
+[git_status]
+style = "yellow"
+# Counts, not a wall of symbols: "how much is uncommitted" is the question, not "which flags".
+format = '([$all_status$ahead_behind]($style) )'
+conflicted = "! "
+ahead = "⇡${count} "
+behind = "⇣${count} "
+diverged = "⇕ "
+untracked = "?${count} "
+modified = "±${count} "
+staged = "+${count} "
+stashed = "≡ "
+
+[cmd_duration]
+# Only speak up when something actually took a while — a duration on every prompt is noise.
+min_time = 3000
+style = "dimmed yellow"
+format = "[took $duration]($style)"
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+
+# Language version chips: off. They cost a subprocess on every prompt, and on a machine that is
+# already swapping, a prompt that has to shell out three times before drawing is a real delay.
+[python]
+disabled = true
+[nodejs]
+disabled = true
+[package]
+disabled = true

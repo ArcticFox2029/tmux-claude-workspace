@@ -1,0 +1,24 @@
+# yazi — the file browser in the left pane.
+#
+# TWO columns, not three. yazi's default splits the pane into parent / current / preview, and in a
+# narrow sidebar the file list — the only column with anything to say here — is left with about 13
+# characters. Every name longer than that becomes "Lumi…", "Back…". The PARENT column is the one
+# dropped: it answers a question you already know the answer to, since you just came from there,
+# and h (or b) goes back in one keypress.
+
+[mgr]
+# yazi does not enable mouse reporting by itself, and a terminal application that never asks for
+# mouse events does not get any — tmux then treats every click in this pane as a pane-selection
+# gesture rather than passing it through, so clicking a folder does nothing at all.
+mouse_events  = ["click", "scroll"]
+
+# parent : current : preview. Written out rather than reduced so it lands on whole columns for the
+# pane width this ships with; re-derive it if you change the split.
+ratio          = [0, 23, 34]
+sort_by        = "natural"   # file10 after file9, not after file1
+sort_dir_first = true
+# Names get the whole width. Size and permissions are what the right pane is for; here they would
+# cost a third of the line answering a question nobody asked while browsing.
+linemode       = "none"
+show_hidden    = false       # .git and node_modules are noise; toggle with .
+show_symlink   = false       # "-> /very/long/target" eats the width this exists to free

@@ -1,0 +1,70 @@
+#!/bin/bash
+# The banner pinned above the right-hand pane: a logo and two lines of text that never scroll away.
+#
+# Runs in a 3-row tmux pane created by dev-layout, with input disabled and a focus-bounce hook, so
+# it cannot be typed into or focused by accident.
+#
+# TO CHANGE IT: edit this file. The text comes from CLAUDE_BANNER_TITLE / CLAUDE_BANNER_MODEL if
+# those are set in the environment, so you can override without editing at all. To remove the
+# banner entirely, delete ~/.local/bin/claude-banner — dev-layout skips it when it is not there.
+set -u
+
+O=$'\e[38;5;208m'    # orange, replacing the original's \e[91m
+K=$'\e[40m'          # the carved-out background, exactly where the original puts it
+R=$'\e[49m'          # ...and back
+FG=$'\e[39m'
+# which this profile renders as a muted blue-grey (Ansi 7 is a Catppuccin value) and reads as faint
+# against the dark pane. A 256-colour near-white is used for the same reason the mascot uses a
+# 256-colour orange: it bypasses the palette instead of redefining a colour every other program
+# also draws with.
+DIM=$'\e[38;5;255m'
+BOLD=$'\e[1m'
+OFF=$'\e[0m'
+
+# Home the cursor and clear before drawing. The pane is exactly as tall as the banner, so there is
+# no room to recover from starting on the wrong row: anything already on row 1 — a shell notice, a
+# leftover line from a respawn — pushes the mascot's head off the top and the banner renders
+# headless. Measured twice; the second time it survived a fresh pane and failed on a respawn.
+printf '\e[H\e[2J'
+
+title="${CLAUDE_BANNER_TITLE:-Claude Code}"
+version=$(command claude --version 2>/dev/null | awk '{print $1}')
+[ -n "$version" ] && version="v$version"
+
+# Claude Code keeps no readable record of the session's model at startup — ~/.claude.json caches
+# only the model PICKER's options — so this is a label, not a reading. Override it by setting
+# CLAUDE_BANNER_MODEL; the tmux status bar at the bottom shows the live one.
+model="${CLAUDE_BANNER_MODEL:-Opus 5 (1M context) · Claude Max}"
+
+# 🐛 The pane is exactly as tall as this banner, so ONE wrapped line scrolls the mascot's head off
+# the top. Measured in a 42-column pane: "Claude Max" wrapped and the banner rendered headless,
+# which looks like the script failing rather than the window being narrow.
+#
+# The mascot occupies 9 columns plus two of padding, so the text has width-11 to live in. Shorten
+# the model label in steps rather than letting the terminal wrap it.
+cols=${COLUMNS:-0}
+[ "$cols" -eq 0 ] && cols=$(tput cols 2>/dev/null || echo 80)
+avail=$((cols - 11))
+if [ "$avail" -lt "${#model}" ]; then
+  model="${CLAUDE_BANNER_MODEL_SHORT:-Opus 5 · Claude Max}"
+  [ "$avail" -lt "${#model}" ] && model="Opus 5"
+  [ "$avail" -lt "${#model}" ] && model=""
+fi
+# Same for the product line: drop the version before letting it wrap.
+[ "$avail" -lt $((11 + ${#version})) ] && version=""
+
+# twice, and the reason is worth keeping so nobody tries a third time.
+#
+# A terminal cannot change font size for one pane, so the only way to make this smaller is to use
+# gap between the legs are positions in a fixed arrangement of block characters, and removing a
+# column moves them relative to each other, so the creature stops being the creature.
+#
+# The glyphs below are Claude Code's own, byte for byte, with one substitution: \e[91m -> a
+# 256-colour orange. Do not "tidy" them.
+printf '%s ▐%s▛███▛█%s%s   %s%s%s%s %s%s%s\n' "$O" "$K" "$FG" "$R" "$BOLD" "$DIM" "$title" "$OFF" "$DIM" "$version" "$FG"
+printf '%s▝▜%s█████%s█▀%s  %s%s%s\n'                   "$O" "$K" "$R" "$FG" "$DIM" "$model" "$FG"
+printf '%s  ▝▝ ▝▝  %s'                                  "$O" "$FG"
+
+# Hold the pane open without burning CPU. `read` on a pane with no input blocks forever, and unlike
+# `sleep infinity` it exits the moment the pane is closed.
+read -r _ 2>/dev/null || sleep 86400

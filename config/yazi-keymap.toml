@@ -1,0 +1,31 @@
+# yazi key bindings — additions only. Anything not named here keeps yazi's default.
+#
+# prepend_keymap rather than keymap: the latter REPLACES yazi's whole default table, so a file
+# listing two bindings leaves a file manager with two keys and no arrows, enter or quit.
+
+[mgr]
+prepend_keymap = [
+  { on = "b", run = "leave", desc = "Go to parent directory (same as h)" },
+
+  # Edit the hovered file. It opens in its own tmux window, so this one is not disturbed at all,
+  # and the window closes itself when the editor exits.
+  #
+  # 🐛 Getting the FILENAME is the hard part. yazi 26.8 hands a shell command nothing: $@, $0 and
+  # $1 all expand to empty, an opener with no placeholder receives ARGC=0, and %* comes through
+  # literally — measured by having an opener dump its own argv and environment. `copy path` is the
+  # one channel yazi does fill, so the chain stashes the clipboard, calls it, reads the path back,
+  # and puts the old clipboard contents back afterwards.
+  #
+  # 🐛 A separate WINDOW, after two other shapes failed. display-popup floats above the window and
+  # receives no mouse events at all. Splitting a pane got the mouse but closing that pane does not
+  # restore the layout — tmux hands the freed columns to whichever pane it prefers, which left the
+  # file browser two characters wide. A window needs neither fix: nothing here is disturbed, and
+  # tmux returns on its own when the editor exits.
+  #
+  # The rest of the work is in ~/.local/bin/yazi-edit, including handing focus back afterwards.
+  { on = "e", run = [
+      "shell 'pbpaste > /tmp/yz-clip.bak 2>/dev/null'",
+      "copy path",
+      "shell '$HOME/.local/bin/yazi-edit \"$(pbpaste)\"; pbcopy < /tmp/yz-clip.bak 2>/dev/null'",
+    ], desc = "Edit this file (opens in its own window)" },
+]

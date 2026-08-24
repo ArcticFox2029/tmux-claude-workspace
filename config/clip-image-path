@@ -1,0 +1,79 @@
+#!/bin/bash
+# Turn "the picture I just took" into a PATH on stdout, and nothing else on stdout.
+#
+# One implementation, two front doors: the `cimg` shell function (command/terminal/clipimg.sh) and
+# the tmux binding (prefix + i) both call this, so there is one place where "which image did they
+# mean" is decided rather than two that can drift.
+#
+# It covers BOTH macOS screenshot gestures, because the owner uses whichever is to hand and they
+# land in completely different places:
+#
+#   ⌘⇧4              -> writes a PNG file to the Desktop, clipboard untouched
+#   ⌃⌘⇧4  (Control)  -> puts the image on the CLIPBOARD, no file anywhere
+#
+# Clipboard is tried first: it is the more deliberate gesture, and if someone copied an image
+# seconds ago that is certainly the one they mean. The Desktop fallback then catches the far more
+# common ⌘⇧4, but only if the file is recent — an hour-old screenshot is not "the picture I just
+# took", and silently handing one back is worse than saying there is nothing.
+set -u
+
+DIR="${CLIPIMG_DIR:-$HOME/.local/share/clipboard-images}"
+MAX_AGE_MIN="${CLIPIMG_MAX_AGE_MIN:-10}"
+
+mkdir -p "$DIR" || exit 1
+
+# Self-pruning, and deliberately here rather than in a cron job or a login hook. This runs only
+# when a picture is actually captured, which is the one moment the folder can grow — so the folder
+# cannot outgrow its limit without this code having just run. No scheduler to install, nothing to
+# break silently on a machine move, and one less moving part than the alternative.
+#
+# Age first, then a hard count. Age alone is not enough: a heavy day of screenshots can put
+# hundreds of megabytes in there well inside the window. The count catches that.
+prune() {
+    find "$DIR" -maxdepth 1 -type f -name '*.png' -mtime "+$KEEP_DAYS" -delete 2>/dev/null
+    # Newest first, delete everything past the cap.
+    ls -t "$DIR"/*.png 2>/dev/null | tail -n "+$((KEEP_MAX + 1))" | while IFS= read -r old; do
+        rm -f -- "$old"
+    done
+}
+KEEP_DAYS="${CLIPIMG_KEEP_DAYS:-14}"
+KEEP_MAX="${CLIPIMG_KEEP_MAX:-200}"
+prune
+
+# 1. the clipboard
+if command -v pngpaste >/dev/null 2>&1; then
+    out="$DIR/clip-$(date +%Y%m%d-%H%M%S).png"
+    if pngpaste "$out" 2>/dev/null; then
+        # pngpaste can exit 0 having written nothing when the clipboard holds a non-image flavour.
+        if [ "$(wc -c < "$out" | tr -d ' ')" -ge 100 ]; then
+            printf '%s\n' "$out"
+            exit 0
+        fi
+    fi
+    rm -f "$out"
+fi
+
+# 2. the newest recent screenshot file, wherever macOS has been told to put them
+shot_dir=$(defaults read com.apple.screencapture location 2>/dev/null)
+[ -z "$shot_dir" ] && shot_dir="$HOME/Desktop"
+shot_dir="${shot_dir/#\~/$HOME}"
+
+newest=$(find "$shot_dir" -maxdepth 1 -type f \
+              \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) \
+              -mmin "-$MAX_AGE_MIN" -print0 2>/dev/null \
+         | xargs -0 ls -t 2>/dev/null | head -1)
+
+if [ -n "$newest" ]; then
+    printf '%s\n' "$newest"
+    exit 0
+fi
+
+# Diagnostics go to stderr so a caller can safely do `p=$(clip-image-path)`.
+{
+    echo "No image to paste"
+    command -v pngpaste >/dev/null 2>&1 \
+        || echo "  - pngpaste is not installed:  brew install pngpaste"
+    echo "  - no image on the clipboard (Ctrl+Cmd+Shift+4 copies a screenshot there)"
+    echo "  - no screenshot newer than $MAX_AGE_MIN min in $shot_dir (Cmd+Shift+4 saves a file)"
+} >&2
+exit 1
