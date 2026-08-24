@@ -110,6 +110,7 @@ A key only does something in the pane it is aimed at, so that column matters mor
 | `.` | Show or hide dotfiles |
 | `/` | Search in this directory |
 | `q` | Quit yazi. The pane drops to a shell; type `yazi` to bring it back |
+| `⌘⇧C` or `⌥`-drag | Copy text out of the preview column on the right |
 
 ### In the editor (after `e`)
 
@@ -164,12 +165,17 @@ only column with anything to say. With it gone, filenames actually fit.
 yazi asks the terminal for mouse reporting so that folders can be clicked. Once it does, tmux hands
 it every click and stops using them for selection — the two cannot both have a plain drag.
 
-**`F3`** lends the mouse back for one selection: it enters tmux's copy mode, dragging selects
-normally, and releasing the button copies straight to the system clipboard and leaves copy mode
-again. One key, one drag, done. `Esc` backs out without copying.
+**`⌘⇧C`** (or **`F3`**) lends the mouse back for one selection: it enters tmux's copy mode,
+dragging selects normally, and releasing the button copies straight to the system clipboard and
+leaves copy mode again. One key, one drag, done. `Esc` backs out without copying.
 
-Holding **Option** while dragging also works and needs no configuration at all — iTerm2 bypasses
-mouse reporting while it is held. `F3` exists because that is not something anyone discovers.
+Holding **`⌥`** while dragging also works and needs no configuration at all — iTerm2 bypasses
+mouse reporting while the key is held. `⌘⇧C` exists because that is not something anyone
+discovers.
+
+Both work **inside yazi's preview column**, which is the place you most often want them: hover a
+file, read it on the right, drag out the line you came for. Neither disturbs yazi — the preview is
+not a text editor and never becomes one, you are selecting what is painted on the screen.
 
 ### Editing a file without leaving the browser
 
