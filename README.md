@@ -49,14 +49,14 @@ sets up the window, the panes and the look. What you run in the right-hand pane 
 | **Session** | Outlives the window. Close the terminal, let the Mac sleep, come back — it is still running. |
 | **Clipboard** | `⌘V` pastes images into tools that accept them · `prefix + i` types the path of a screenshot file |
 | **Prompt** | [starship](https://starship.rs), scoped to this terminal only |
-| **Status line** | Model, tokens used, and an estimated cost — see below |
+| **Status line** | Model, tokens used, an estimated cost, and how many files are uncommitted — see below |
 
 ### About the money on the status line
 
 The status line reads something like:
 
 ```
-🚀 Opus 5 | 📉 Token 448M | 💸 11,336 THB
+🚀 Opus 5 | 📉 Token 448M | 💸 11,336 THB | 📝 3 No-Commit
 ```
 
 **That figure is an estimate, not a bill.** It is your token counts multiplied by Anthropic's
@@ -76,6 +76,25 @@ export CC_STATUSLINE_RATE=30        # multiplier applied to USD (default: 1)
 
 Pick a rate slightly *below* the spot rate. The point is a floor you can trust, not an exact
 conversion — a figure that never overstates is more useful than one that is occasionally precise.
+
+### The uncommitted-file count
+
+```
+📝 3 No-Commit
+```
+
+Three files are changed, staged or untracked and not yet in a commit. It appears only when there is
+something to report — a clean tree prints nothing, so the line stays quiet when there is nothing to
+say.
+
+The reason it exists: nothing else in the terminal tells you. A prompt shows the branch, not whether
+work is sitting in it, and if you commit many small times a day the state you most want at a glance
+is the one with no indicator anywhere. Untracked files are counted too — a new file nobody has run
+`git add` on is exactly the kind of work that goes missing.
+
+It runs `git status` on every render rather than caching it, because a cached count would be worse
+than none: the whole point is the state right now. Measured at 0.06s on a 200-file repo. Outside a
+git repository it prints nothing at all.
 
 If you would rather not see it at all, delete `~/.claude/statusline-command.sh` and remove the
 `statusLine` key from `~/.claude/settings.json`; or replace the script with your own, since it only

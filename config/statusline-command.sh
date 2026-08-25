@@ -192,6 +192,36 @@ _weekly_cost_compute() {
   printf '%s' "$out"
 }
 
+# Uncommitted-file count for the project directory.
+#
+# [added 2026-08-25, owner's request] "ใน cli มันไม่รู้" — nothing in the terminal shows that work is
+# sitting uncommitted, and this project commits locally many times a day. A number here is the only
+# place it is visible without stopping to run git status.
+#
+# Counts what `git status --porcelain` lists, which is staged + unstaged + untracked. Untracked is
+# included on purpose: a new file nobody has added yet is exactly the kind of work that gets lost.
+#
+# Speed matters more here than anywhere else in this file, since a statusline renders constantly.
+# Measured in this repo over 8 runs: 0.06s average, 0.09s worst, with one 1.18s cold-cache outlier on
+# the very first call after boot. That is cheap enough to run inline rather than cache it — a cached
+# count would be worse than none, since the whole point is knowing the CURRENT state.
+#
+# Silent on everything: not a repo, git missing, git erroring, a clean tree. The caller then omits
+# the segment entirely rather than printing a zero, so a clean tree reads as calm instead of noisy.
+_uncommitted_segment() {
+  local dir="$1" n
+  [ -n "$dir" ] && [ -d "$dir" ] || return 0
+  command -v git >/dev/null 2>&1 || return 0
+  (
+    cd "$dir" 2>/dev/null || exit 0
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+    n=$(git status --porcelain 2>/dev/null | grep -c '^' 2>/dev/null)
+    case "$n" in ''|*[!0-9]*) exit 0 ;; esac
+    [ "$n" -gt 0 ] || exit 0
+    printf '📝 %s No-Commit' "$n"
+  )
+}
+
 input=$(cat)
 
 model=""
@@ -219,6 +249,11 @@ line=""
 weekly=$(_weekly_cost_segment 2>/dev/null)
 if [ -n "$weekly" ]; then
   [ -n "$line" ] && line="$line | $weekly" || line="$weekly"
+fi
+
+uncommitted=$(_uncommitted_segment "$cwd" 2>/dev/null)
+if [ -n "$uncommitted" ]; then
+  [ -n "$line" ] && line="$line | $uncommitted" || line="$uncommitted"
 fi
 
 printf '%s\n' "$line"

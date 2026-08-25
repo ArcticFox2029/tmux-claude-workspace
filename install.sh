@@ -141,7 +141,19 @@ echo "  ${GRN}ok${OFF}  configs"
 # The Claude Code status line, if Claude Code is installed. Opt-in: it is wired into
 # ~/.claude/settings.json, which is a file you may already have opinions about.
 if [ -d "$HOME/.claude" ]; then
-  install -m 755 "$SRC/statusline-command.sh" "$HOME/.claude/statusline-command.sh"
+  # 🐛 [fixed 2026-08-25] This overwrote an existing status line unconditionally. Anyone who had
+  # edited theirs — and the point of a status line is that people edit theirs — lost the edit on the
+  # next install, silently, with no copy kept. Found because this repo's own author had added a spend
+  # counter and an uncommitted-file counter to the live file that this line would have erased.
+  #
+  # Keeps one timestamped backup beside it, and says where. Still installs, so re-running install
+  # does what it says; it just stops being destructive about it.
+  _sl="$HOME/.claude/statusline-command.sh"
+  if [ -f "$_sl" ] && ! cmp -s "$_sl" "$SRC/statusline-command.sh"; then
+    _sl_bak="$_sl.before-install-$(date +%Y%m%d-%H%M%S)"
+    cp "$_sl" "$_sl_bak" 2>/dev/null && echo "  kept your previous status line at ${_sl_bak##*/}"
+  fi
+  install -m 755 "$SRC/statusline-command.sh" "$_sl"
   python3 - "$HOME/.claude/settings.json" <<'PYSL'
 import json, pathlib, sys
 p = pathlib.Path(sys.argv[1])
