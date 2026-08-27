@@ -21,50 +21,76 @@ DIM=$'\e[38;5;255m'
 BOLD=$'\e[1m'
 OFF=$'\e[0m'
 
-# Home the cursor and clear before drawing. The pane is exactly as tall as the banner, so there is
-# no room to recover from starting on the wrong row: anything already on row 1 — a shell notice, a
-# leftover line from a respawn — pushes the mascot's head off the top and the banner renders
-# headless. Measured twice; the second time it survived a fresh pane and failed on a respawn.
-printf '\e[H\e[2J'
-
-title="${CLAUDE_BANNER_TITLE:-Claude Code}"
-version=$(command claude --version 2>/dev/null | awk '{print $1}')
-[ -n "$version" ] && version="v$version"
+# Everything below is computed ONCE. draw() is re-entered on every resize, and re-running
+# `claude --version` there would spawn a subprocess per frame while a pane is dragged.
+_TITLE="${CLAUDE_BANNER_TITLE:-Claude Code}"
+_VERSION=$(command claude --version 2>/dev/null | awk '{print $1}')
+[ -n "$_VERSION" ] && _VERSION="v$_VERSION"
 
 # Claude Code keeps no readable record of the session's model at startup — ~/.claude.json caches
 # only the model PICKER's options — so this is a label, not a reading. Override it by setting
 # CLAUDE_BANNER_MODEL; the tmux status bar at the bottom shows the live one.
-model="${CLAUDE_BANNER_MODEL:-Opus 5 (1M context) · Claude Max}"
+_MODEL_FULL="${CLAUDE_BANNER_MODEL:-Opus 5 (1M context) · Claude Max}"
 
-# 🐛 The pane is exactly as tall as this banner, so ONE wrapped line scrolls the mascot's head off
-# the top. Measured in a 42-column pane: "Claude Max" wrapped and the banner rendered headless,
-# which looks like the script failing rather than the window being narrow.
-#
-# The mascot occupies 9 columns plus two of padding, so the text has width-11 to live in. Shorten
-# the model label in steps rather than letting the terminal wrap it.
-cols=${COLUMNS:-0}
-[ "$cols" -eq 0 ] && cols=$(tput cols 2>/dev/null || echo 80)
-avail=$((cols - 11))
-if [ "$avail" -lt "${#model}" ]; then
-  model="${CLAUDE_BANNER_MODEL_SHORT:-Opus 5 · Claude Max}"
-  [ "$avail" -lt "${#model}" ] && model="Opus 5"
-  [ "$avail" -lt "${#model}" ] && model=""
-fi
-# Same for the product line: drop the version before letting it wrap.
-[ "$avail" -lt $((11 + ${#version})) ] && version=""
+# 🐛 A resize used to leave this banner headless for good. The pane is exactly as tall as the
+# banner, so tmux rounding 3 rows down to 2 scrolls the mascot's head off — and the script had
+# already drawn its only frame and gone to sleep, so nothing ever put it back. Resizing the pane
+# to 3 again restored the HEIGHT but not the CONTENT. Drawing is now a function that SIGWINCH
+# re-runs, which is the half tmux cannot do from outside.
+draw() {
+  # Home the cursor and clear before drawing. The pane is exactly as tall as the banner, so there is
+  # no room to recover from starting on the wrong row: anything already on row 1 — a shell notice, a
+  # leftover line from a respawn — pushes the mascot's head off the top and the banner renders
+  # headless. Measured twice; the second time it survived a fresh pane and failed on a respawn.
+  printf '\e[H\e[2J'
 
-# twice, and the reason is worth keeping so nobody tries a third time.
-#
-# A terminal cannot change font size for one pane, so the only way to make this smaller is to use
-# gap between the legs are positions in a fixed arrangement of block characters, and removing a
-# column moves them relative to each other, so the creature stops being the creature.
-#
-# The glyphs below are Claude Code's own, byte for byte, with one substitution: \e[91m -> a
-# 256-colour orange. Do not "tidy" them.
-printf '%s ▐%s▛███▛█%s%s   %s%s%s%s %s%s%s\n' "$O" "$K" "$FG" "$R" "$BOLD" "$DIM" "$title" "$OFF" "$DIM" "$version" "$FG"
-printf '%s▝▜%s█████%s█▀%s  %s%s%s\n'                   "$O" "$K" "$R" "$FG" "$DIM" "$model" "$FG"
-printf '%s  ▝▝ ▝▝  %s'                                  "$O" "$FG"
+  # Both are reset from the cached copies because the width fitting below destroys them.
+  title="$_TITLE"
+  version="$_VERSION"
+  model="$_MODEL_FULL"
 
-# Hold the pane open without burning CPU. `read` on a pane with no input blocks forever, and unlike
-# `sleep infinity` it exits the moment the pane is closed.
-read -r _ 2>/dev/null || sleep 86400
+  # 🐛 The pane is exactly as tall as this banner, so ONE wrapped line scrolls the mascot's head off
+  # the top. Measured in a 42-column pane: "Claude Max" wrapped and the banner rendered headless,
+  # which looks like the script failing rather than the window being narrow.
+  #
+  # The mascot occupies 9 columns plus two of padding, so the text has width-11 to live in. Shorten
+  # the model label in steps rather than letting the terminal wrap it.
+  # 🐛 This used to be `tput cols 2>/dev/null`, and it reported 80 in a 40-column pane — so the
+  # fitting below never fired, the model label wrapped, and the mascot's head scrolled off. tput
+  # takes the width from stdout and then stderr; inside $( ) stdout is already a pipe, so silencing
+  # stderr blinds the only channel it had left and it falls back to terminfo's default for TERM.
+  # stty reads its own stdin, which /dev/tty guarantees, so no redirect can blind it. Measured:
+  # in the same 40-column pane, `tput cols` = 40, `tput cols 2>/dev/null` = 80.
+  cols=$( { stty size </dev/tty; } 2>/dev/null | awk '{print $2}' )
+  case "${cols:-}" in ''|*[!0-9]*) cols=80 ;; esac
+  avail=$((cols - 11))
+  if [ "$avail" -lt "${#model}" ]; then
+    model="${CLAUDE_BANNER_MODEL_SHORT:-Opus 5 · Claude Max}"
+    [ "$avail" -lt "${#model}" ] && model="Opus 5"
+    [ "$avail" -lt "${#model}" ] && model=""
+  fi
+  # Same for the product line: drop the version before letting it wrap.
+  [ "$avail" -lt $((11 + ${#version})) ] && version=""
+
+  # twice, and the reason is worth keeping so nobody tries a third time.
+  #
+  # A terminal cannot change font size for one pane, so the only way to make this smaller is to use
+  # gap between the legs are positions in a fixed arrangement of block characters, and removing a
+  # column moves them relative to each other, so the creature stops being the creature.
+  #
+  # The glyphs below are Claude Code's own, byte for byte, with one substitution: \e[91m -> a
+  # 256-colour orange. Do not "tidy" them.
+  printf '%s ▐%s▛███▛█%s%s   %s%s%s%s %s%s%s\n' "$O" "$K" "$FG" "$R" "$BOLD" "$DIM" "$title" "$OFF" "$DIM" "$version" "$FG"
+  printf '%s▝▜%s█████%s█▀%s  %s%s%s\n'                   "$O" "$K" "$R" "$FG" "$DIM" "$model" "$FG"
+  printf '%s  ▝▝ ▝▝  %s'                                  "$O" "$FG"
+}
+
+# Draw once, then hold the pane open without burning CPU, waking only to redraw. `wait` is
+# interruptible by a trap where a bare `sleep` is not, so the WINCH lands immediately.
+draw
+trap draw WINCH
+while :; do
+  sleep 86400 & _s=$!
+  wait "$_s" 2>/dev/null || true
+  kill "$_s" 2>/dev/null || true
+done

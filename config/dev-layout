@@ -65,9 +65,22 @@ if [ -x "$HOME/.local/bin/claude-banner" ]; then
     "$TMUX_BIN" select-pane -d -t "$BANNER" 2>/dev/null
     "$TMUX_BIN" set-hook -t "$SESSION" after-select-pane \
         "if -F '#{==:#{pane_id},$BANNER}' 'select-pane -t $RIGHT'" 2>/dev/null
-    # A window resize redistributes rows proportionally, and a 3-row pane rounds down to 2 — which
-    # scrolls the top line of the banner away. The hook puts the height back.
-    "$TMUX_BIN" set-hook -t "$SESSION" client-resized "resize-pane -t $BANNER -y 3" 2>/dev/null
+    # A resize redistributes rows proportionally, and a 3-row pane rounds down to 2 — which scrolls
+    # the top line of the banner away. Measured live at 75x2 and again at 77x4, so the height is not
+    # holding on its own.
+    #
+    # client-resized alone is not enough: it fires when the CLIENT changes size, not when the
+    # window's layout is recomputed, which is the event that actually re-divides the rows. Both are
+    # bound, and window-layout-changed is the one that catches a split or a pane closing.
+    #
+    # Re-running resize-pane at the size it already has is a no-op in tmux and does not re-emit the
+    # hook, so binding the layout event does not recurse.
+    for _h in client-resized window-layout-changed after-resize-pane; do
+      # refresh-client is chained on because snapping the pane back fixes the HEIGHT while what is
+      # already painted in the other panes stays stale — locking the screen and unlocking onto a
+      # display of a different size left the whole window showing three overlapping repaints.
+      "$TMUX_BIN" set-hook -t "$SESSION" "$_h" "resize-pane -t $BANNER -y 3 ; refresh-client" 2>/dev/null
+    done
   fi
 fi
 

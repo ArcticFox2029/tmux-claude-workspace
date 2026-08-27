@@ -124,7 +124,12 @@ backup() { [ -f "$1" ] && [ ! -f "$1.bak" ] && cp "$1" "$1.bak" && echo "    sav
 mkdir -p "$HOME/.local/bin" "$HOME/.config/yazi" "$HOME/.config/dev-layout" \
          "$HOME/Library/Application Support/iTerm2/DynamicProfiles"
 
-for f in dev-layout claude-banner clip-image-path keybytes yazi-edit yazi-edit-run; do
+# `ai-ask` is listed but is NOT part of what this repository publishes: it calls the author's own
+# Cloud pools with the author's own keys, which is a private backend and no use to anyone else.
+# The loop therefore skips whatever is absent rather than failing on it — that keeps ONE installer
+# for both trees instead of two that drift, which is a failure mode this project has already had.
+for f in dev-layout claude-banner ai-ask clip-image-path keybytes yazi-edit yazi-edit-run; do
+  [ -f "$SRC/$f" ] || continue
   install -m 755 "$SRC/$f" "$HOME/.local/bin/$f"
 done
 echo "  ${GRN}ok${OFF}  scripts -> ~/.local/bin"

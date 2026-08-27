@@ -26,7 +26,7 @@ echo
 echo "It does NOT uninstall tmux, yazi, starship, eza, pngpaste, iTerm2 or the font."
 confirm || exit 0
 
-for f in dev-layout claude-banner clip-image-path keybytes yazi-edit yazi-edit-run; do rm -f "$HOME/.local/bin/$f"; done
+for f in dev-layout claude-banner ai-ask clip-image-path keybytes yazi-edit yazi-edit-run; do rm -f "$HOME/.local/bin/$f"; done
 rm -f "$HOME/.config/yazi-edit/vimrc"; rmdir "$HOME/.config/yazi-edit" 2>/dev/null
 rm -f "$HOME/Library/Application Support/iTerm2/DynamicProfiles/dev.json"
 for f in "$HOME/.tmux.conf" "$HOME/.config/yazi/yazi.toml" "$HOME/.config/yazi/keymap.toml" "$HOME/.config/starship.toml"; do

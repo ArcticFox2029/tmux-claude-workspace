@@ -192,6 +192,143 @@ _weekly_cost_compute() {
   printf '%s' "$out"
 }
 
+# ============================================================================
+# Second row: the 5-hour and 7-day quota gauges.
+#
+# [added 2026-08-27, owner's request] "สร้างบรรทัดเพิ่มมา ใต้นั้น ทำเป็น (5h[▓▓░░░]14% rst:4h 51m)
+# สีเขียว และ weekly สีฟ้า" — with a screenshot of the exact shape. Deliberately a SECOND row
+# rather than more segments on the first: an earlier attempt to fit these beside the cost figure
+# pushed the uncommitted-file count off the end of the pane, where it was silently truncated. Row
+# one says what has been spent; row two says what is left.
+#
+# Free to render, unlike everything on row one. Claude Code hands both windows to the statusline
+# on stdin — .rate_limits.five_hour / .seven_day, each carrying used_percentage and a resets_at
+# epoch — so there is no transcript scan, no cache, and nothing that can go stale. The row is
+# omitted entirely when the field is absent (an older CLI, or an API-key account that has no
+# subscription window), rather than printed empty.
+# ============================================================================
+
+# How long until a window resets: "51m", "4h 51m", "2d 23h".
+#
+# [2026-08-27] Capped at TWO units. The weekly window was the only thing on the row printing three
+# ("2d 23h 8m") while the 5-hour one printed one ("28m"), and that asymmetry was what read as off
+# about it ("ตรง weekly ยังแปลกๆ"). The dropped minute was never information anyway — nobody plans
+# around the 8th minute of something three days away.
+_rate_limit_until() {
+  local secs="$1" d h m
+  case "$secs" in ''|*[!0-9-]*) return 0 ;; esac
+  [ "$secs" -lt 0 ] 2>/dev/null && secs=0
+  d=$(( secs / 86400 )); h=$(( (secs % 86400) / 3600 )); m=$(( (secs % 3600) / 60 ))
+  if   [ "$d" -gt 0 ]; then printf '%dd %dh' "$d" "$h"
+  elif [ "$h" -gt 0 ]; then printf '%dh %dm' "$h" "$m"
+  else                      printf '%dm' "$m"
+  fi
+}
+
+# One gauge: "5h[■□□□□]14% rst:4h 51m".
+#
+# [2026-08-27] The glyphs went ░▓ -> ░█ -> ▁▄ -> □■, each on the owner's eye. What was wrong with
+# the full block was height, not weight: it fills the cell top to bottom, so the bar towered over
+# every letter beside it ("มันสูงไป"). The squares sit at about text height, which is what
+# "เท่ากับ size ตัวอักษร" asked for, and the outline keeps the empty part of the track visible.
+#
+# One caveat, accepted: U+25A0/25A1 are East Asian AMBIGUOUS width, so a terminal set to render
+# ambiguous glyphs double-width draws this row twice as wide. It costs nothing but width — the row
+# has no column alignment for a shift to break — but it is the reason to reach for ▄/▁ or █/░ (all
+# box-drawing, all unambiguously single-width) if this ever looks stretched somewhere else.
+#
+# The bar is 6 cells, and two rounding rules keep it honest at the ends: any usage at all lights
+# one cell (so 3% cannot read as untouched), and a FULL bar is reserved for a window genuinely at
+# the cap (so 95% cannot look identical to 100%).
+_rate_limit_gauge() {
+  local label="$1" pct="$2" resets="$3" color="$4" now="$5"
+  case "$pct" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$pct" -gt 100 ] 2>/dev/null && pct=100
+
+  # FIVE cells, so one cell is exactly 20% and the bar can be read as a fraction. It was six, and
+  # six does not divide anything a percentage lands on: 72% filled four of six, which reads as 67%
+  # and undersells it by a whole cell ("1w[■■■■□□]72% ผิด, ควรเป็น 1w[■■■■□]72%").
+  #
+  # The old rule reserving a FULL bar for exactly 100% is gone with it. At five cells it collapsed
+  # everything from 70% to 99% into the same four-cell picture, which is worse than what it bought:
+  # now 90% and above fill the bar, and 90% vs 100% is the one distinction the printed number is
+  # already making right beside it. Any usage at all still lights one cell, so 1% cannot read as
+  # untouched.
+  local n=5 filled i=0 bar=""
+  filled=$(( (pct * n + 50) / 100 ))
+  [ "$pct" -gt 0 ] && [ "$filled" -lt 1 ] && filled=1
+  while [ "$i" -lt "$n" ]; do
+    if [ "$i" -lt "$filled" ]; then bar="${bar}■"; else bar="${bar}□"; fi
+    i=$(( i + 1 ))
+  done
+
+  local off=$'\033[0m' rst=""
+  case "$resets" in
+    ''|*[!0-9]*) : ;;
+    *) rst=$(_rate_limit_until $(( resets - now )) 2>/dev/null) ;;
+  esac
+
+  if [ -n "$rst" ]; then
+    printf '%s%s[%s]%s%% rst:%s%s' "$color" "$label" "$bar" "$pct" "$rst" "$off"
+  else
+    printf '%s%s[%s]%s%%%s' "$color" "$label" "$bar" "$pct" "$off"
+  fi
+}
+
+# Builds the whole second row. The two windows are told apart by colour before either number is
+# read; see the palette note below the jq call for why this pair.
+_rate_limit_segment() {
+  local payload="$1" now
+  [ -n "$payload" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  now=$(date +%s 2>/dev/null) || return 0
+
+  # Separated by ';', NOT by a tab. A tab is an IFS *whitespace* character, so bash collapses runs
+  # of them and strips leading ones — a payload carrying only the weekly window (both 5h fields
+  # empty) then shifted its values two places left and rendered the weekly figure under a "5h"
+  # label. Caught in testing, and only ever visible in the one case the gauge exists to be
+  # trusted in.
+  #
+  # used_percentage is floored: a fractional percent would print as "84.6%" and break the integer
+  # arithmetic that sizes the bar.
+  local raw fh_pct fh_at wk_pct wk_at
+  raw=$(printf '%s' "$payload" | jq -r '
+      (.rate_limits // empty)
+      | [ (.five_hour.used_percentage // "" | if type=="number" then floor else . end),
+          (.five_hour.resets_at        // "" | if type=="number" then floor else . end),
+          (.seven_day.used_percentage  // "" | if type=="number" then floor else . end),
+          (.seven_day.resets_at        // "" | if type=="number" then floor else . end) ]
+      | map(tostring) | join(";")' 2>/dev/null) || return 0
+  [ -n "$raw" ] || return 0
+  IFS=';' read -r fh_pct fh_at wk_pct wk_at <<< "$raw"
+
+  # Pink for the 5-hour window, sky blue for the weekly one. Two rules picked this pair.
+  #
+  # Warm goes to the window that can actually stop you today; the weekly one is slow news and
+  # takes the cool colour. And they must not be confusable at a glance — pink against sky blue
+  # separates on a dark background in a way green against cyan did not, which is what the owner
+  # was looking at when they asked for this ("ลอง 5h สีชมพูดูหรือแดง").
+  #
+  # RED was the other candidate for 5h and was deliberately not taken: spending it as a permanent
+  # label would leave nothing to say "nearly out" with. It stays free for that meaning.
+  #
+  # 256-colour rather than the basic 8: the basic magenta and cyan are the same two the terminal
+  # theme reassigns, so the pair rendered differently in each theme. To change either, swap the
+  # number — 205 is a hotter pink, 203 red, 80 a deeper cyan, 79 teal.
+  local pink=$'\033[38;5;212m' sky=$'\033[38;5;117m' out="" one
+  one=$(_rate_limit_gauge "5h" "$fh_pct" "$fh_at" "$pink" "$now" 2>/dev/null)
+  [ -n "$one" ] && out="$one"
+  one=$(_rate_limit_gauge "1w" "$wk_pct" "$wk_at" "$sky" "$now" 2>/dev/null)
+  [ -n "$one" ] && { [ -n "$out" ] && out="$out | $one" || out="$one"; }
+
+  # The row says what it is. Row one is a mix of unrelated figures and reads fine unlabelled, but
+  # two bracketed bars on a line of their own do not announce that they are the SUBSCRIPTION
+  # quota rather than, say, this session's context.
+  [ -n "$out" ] && out="⏳ Limit : $out"
+
+  printf '%s' "$out"
+}
+
 # Uncommitted-file count for the project directory.
 #
 # [added 2026-08-25, owner's request] "ใน cli มันไม่รู้" — nothing in the terminal shows that work is
@@ -257,3 +394,14 @@ if [ -n "$uncommitted" ]; then
 fi
 
 printf '%s\n' "$line"
+
+# Row two. Printed only when the payload actually carries the windows, so an older CLI or an
+# API-key account gets the single row it has always had rather than a stray blank line.
+limits=$(_rate_limit_segment "$input" 2>/dev/null)
+if [ -n "$limits" ]; then
+  printf '%s\n' "$limits"
+fi
+
+# Explicit, because the last command above is a test: without this, every render on an account
+# that has no subscription window exits 1 and reports the statusline as failing.
+exit 0

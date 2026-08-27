@@ -49,15 +49,23 @@ sets up the window, the panes and the look. What you run in the right-hand pane 
 | **Session** | Outlives the window. Close the terminal, let the Mac sleep, come back — it is still running. |
 | **Clipboard** | `⌘V` pastes images into tools that accept them · `prefix + i` types the path of a screenshot file |
 | **Prompt** | [starship](https://starship.rs), scoped to this terminal only |
-| **Status line** | Model, tokens used, an estimated cost, and how many files are uncommitted — see below |
+| **Status line** | Two rows: model, tokens, estimated cost and uncommitted files; then the 5h and weekly quota gauges — see below |
 
-### About the money on the status line
+### The status line
 
-The status line reads something like:
+![The status line](docs/statusline.png)
+
+Two rows. The first is what has been *spent*, the second is what is *left*:
 
 ```
-🚀 Opus 5 | 📉 Token 448M | 💸 11,336 THB | 📝 3 No-Commit
+🚀 Opus 5 | 📉 Token 848M | 💸 15,860 THB | 📝 3 No-Commit
+⏳ Limit : 5h[■■■■■]96% rst:6m | 1w[■■■■□]72% rst:2d 22h
 ```
+
+Only the first row costs anything to draw — it walks the day's transcripts, which is why it is
+cached. The second row is free: Claude Code hands both quota windows to the status line on stdin.
+
+### About the money on row one
 
 **That figure is an estimate, not a bill.** It is your token counts multiplied by Anthropic's
 published per-token API rates, with cache-read and cache-write priced separately rather than
@@ -96,9 +104,42 @@ It runs `git status` on every render rather than caching it, because a cached co
 than none: the whole point is the state right now. Measured at 0.06s on a 200-file repo. Outside a
 git repository it prints nothing at all.
 
-If you would rather not see it at all, delete `~/.claude/statusline-command.sh` and remove the
-`statusLine` key from `~/.claude/settings.json`; or replace the script with your own, since it only
-has to print one line.
+### The quota gauges on row two
+
+```
+⏳ Limit : 5h[■■■■■]96% rst:6m | 1w[■■■■□]72% rst:2d 22h
+```
+
+How much of each subscription window you have used, and how long until it resets. Pink is the
+5-hour window, blue the weekly one. Red is deliberately not used for either — it is left free to
+mean "nearly out" if you want to add that.
+
+This row costs nothing to draw. Claude Code already hands both windows to the status line on stdin
+(`.rate_limits.five_hour` and `.seven_day`), so unlike the figures above it there is no scan, no
+cache, and nothing that can go stale. On an account with no subscription window — an API key, or a
+Claude Code older than 2.1 — the row is simply not printed.
+
+It is a second row rather than four more segments on the first because the first had run out of
+room: adding them there pushed the uncommitted-file count past the edge of the pane, where it was
+silently truncated away.
+
+The bar is five cells because five is what divides a percentage: one cell is exactly 20%, so the
+bar can be read as a fraction and never disagrees with the number beside it by more than half a
+cell. Six cells could not — 72% filled four of six, which reads as 67%. Any usage at all lights one
+cell, so 1% cannot look untouched; from 90% up the bar is full, and the number beside it is what
+separates 90 from 100.
+
+It is drawn with `■` and `□` rather than `█`/`░`, because a full block fills the cell top to bottom
+and stands taller than the text next to it. One caveat: those two squares are East Asian
+*ambiguous* width, so a terminal configured to draw ambiguous glyphs double-width will draw this
+row twice as wide. Nothing on the row is column-aligned, so it costs width and nothing else — but
+if it ever looks stretched, `▄`/`▁` and `█`/`░` are box-drawing and unambiguously single-width.
+
+### Turning it off
+
+Delete `~/.claude/statusline-command.sh` and remove the `statusLine` key from
+`~/.claude/settings.json`; or replace the script with your own, since all it has to do is print a
+line or two to stdout.
 
 ## Every key, and where it works
 
